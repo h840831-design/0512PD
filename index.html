@@ -226,22 +226,18 @@
 
     </main>
 
-<!-- 完全依賴 GAS 的純前端邏輯 (移除 Firebase) -->
+<!-- 使用 JSONP 絕對解決跨域問題的純前端邏輯 -->
 <script>
-    // UI Utilities
+    // --- 介面切換邏輯 ---
     window.selectSession = (dateStr, btnNum) => {
         document.getElementById('selected-session-input').value = dateStr;
         document.getElementById('selected-session-display').innerText = dateStr;
-        
         document.getElementById('selection-container').classList.add('hidden');
         document.getElementById('info-cards').classList.add('hidden');
-        
         document.getElementById('header-bg').classList.remove('pb-24');
         document.getElementById('header-bg').classList.add('pb-12');
-        
         const formContainer = document.getElementById('form-container');
         formContainer.classList.remove('hidden');
-        
         window.scrollTo({ top: formContainer.offsetTop - 50, behavior: 'smooth' });
     };
 
@@ -249,12 +245,9 @@
         document.getElementById('form-container').classList.add('hidden');
         document.getElementById('selection-container').classList.remove('hidden');
         document.getElementById('info-cards').classList.remove('hidden');
-        
         document.getElementById('header-bg').classList.add('pb-24');
         document.getElementById('header-bg').classList.remove('pb-12');
-        
         document.getElementById('form-error').classList.add('hidden');
-        
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
@@ -266,68 +259,64 @@
 
     // --- 核心系統設定 ---
     const CAPACITY = 12;
-    // 您的真實 GAS 網址
+    // 更新為新的 Google Apps Script 網址
     const gasUrl = "https://script.google.com/macros/s/AKfycbxZ8nJ1Lep5O04kBZc8DAQ2y7tdMTpi9FjxfZk33WLWQFJjiNpGqZXugzEVueDsMI6I/exec";
     
-    // 存放試算表回傳的真實人數
-    let counts = {
-        "session_2024_06_12": 0,
-        "session_2024_06_18": 0
+    // 全域變數，用來儲存最新抓到的人數
+    let globalCounts = { "session_2024_06_12": 0, "session_2024_06_18": 0 };
+
+    // --- 1. 使用 JSONP 讀取真實資料 ---
+    // 這是一個全域函式，GAS 回傳代碼後會自動執行它！
+    window.handleGasResponse = function(data) {
+        console.log("成功從 GAS 取得資料：", data);
+        globalCounts = data;
+        updateUI(data["session_2024_06_12"], data["session_2024_06_18"]);
     };
 
-    // 1. 網頁載入時，向 GAS 抓取試算表的真實報名人數
-    const fetchRealDataCount = async () => {
-        try {
-            // 發送 GET 請求到 GAS (執行您 GAS 裡的 doGet 函式)
-            // 這裡不再使用 mode: 'no-cors'，因為我們需要讀取回傳的 JSON 內容
-            const response = await fetch(gasUrl);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            counts = await response.json();
-            updateUI();
-        } catch (error) {
-            console.error("無法取得試算表真實人數:", error);
-            document.getElementById('count-1').innerText = `讀取失敗`;
-            document.getElementById('count-2').innerText = `讀取失敗`;
-        }
+    const fetchRealDataJSONP = () => {
+        // 動態建立一個 script 標籤，並在網址後面加上 ?callback=handleGasResponse
+        const script = document.createElement('script');
+        // 加上時間戳記防止快取
+        script.src = gasUrl + "?callback=handleGasResponse&t=" + new Date().getTime();
+        
+        script.onerror = function() {
+            console.error("JSONP 載入失敗！");
+            document.getElementById('count-1').innerText = `連線失敗`;
+            document.getElementById('count-2').innerText = `連線失敗`;
+        };
+        
+        // 將 script 塞入網頁，就會觸發下載並執行
+        document.body.appendChild(script);
     };
 
-    // 2. 更新畫面進度條
-    const updateUI = () => {
-        const count1 = counts["session_2024_06_12"] || 0;
-        const count2 = counts["session_2024_06_18"] || 0;
+    // --- 2. 更新畫面 ---
+    const updateUI = (count1, count2) => {
+        // 確保數值是數字，如果沒拿到就當作 0
+        count1 = parseInt(count1) || 0;
+        count2 = parseInt(count2) || 0;
 
-        // 更新 6/12 場次
+        // 更新第一場 (6/12)
         document.getElementById('count-1').innerText = `${count1} / ${CAPACITY}`;
         document.getElementById('bar-1').style.width = `${(count1 / CAPACITY) * 100}%`;
         const btn1 = document.getElementById('btn-session-1');
         if (count1 >= CAPACITY) {
             btn1.disabled = true;
             btn1.innerHTML = '<i class="fa-solid fa-lock"></i> 該場次已額滿';
-            btn1.classList.replace('bg-slate-800', 'bg-slate-300');
-            btn1.classList.replace('hover:bg-slate-700', 'hover:bg-slate-300');
-            btn1.classList.remove('text-white');
-            btn1.classList.add('text-slate-500');
+            btn1.className = 'w-full bg-slate-300 text-slate-500 font-bold py-3.5 px-4 rounded-xl flex justify-center items-center gap-2 cursor-not-allowed';
         }
 
-        // 更新 6/18 場次
+        // 更新第二場 (6/18)
         document.getElementById('count-2').innerText = `${count2} / ${CAPACITY}`;
         document.getElementById('bar-2').style.width = `${(count2 / CAPACITY) * 100}%`;
         const btn2 = document.getElementById('btn-session-2');
         if (count2 >= CAPACITY) {
             btn2.disabled = true;
             btn2.innerHTML = '<i class="fa-solid fa-lock"></i> 該場次已額滿';
-            btn2.classList.replace('bg-slate-800', 'bg-slate-300');
-            btn2.classList.replace('hover:bg-slate-700', 'hover:bg-slate-300');
-            btn2.classList.remove('text-white');
-            btn2.classList.add('text-slate-500');
+            btn2.className = 'w-full bg-slate-300 text-slate-500 font-bold py-3.5 px-4 rounded-xl flex justify-center items-center gap-2 cursor-not-allowed';
         }
     };
 
-    // 3. 處理表單送出
+    // --- 3. 提交表單 ---
     document.getElementById('regForm').onsubmit = async (e) => {
         e.preventDefault();
         document.getElementById('form-error').classList.add('hidden');
@@ -335,20 +324,19 @@
         const session = document.getElementById('selected-session-input').value;
         const submitBtn = document.getElementById('submitBtn');
         
-        // 送出前再次檢查是否額滿 (使用本地存取的變數)
-        const currentCount = session === '2024-06-12' ? counts["session_2024_06_12"] : counts["session_2024_06_18"];
+        // 再次檢查是否額滿 (防呆)
+        const currentCount = session === '2024-06-12' ? globalCounts["session_2024_06_12"] : globalCounts["session_2024_06_18"];
         if (currentCount >= CAPACITY) {
             showError("很抱歉，該場次已額滿！");
             return;
         }
 
-        // 鎖定按鈕避免重複送出
+        // 鎖定按鈕
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 處理中...';
         submitBtn.classList.replace('bg-emerald-600', 'bg-emerald-400');
 
         try {
-            // 整理表單資料
             const formData = {
                 unit: document.getElementById('unit').value.trim(),
                 name: document.getElementById('name').value.trim(),
@@ -358,9 +346,8 @@
                 session: session
             };
 
-            // 將資料傳送到 GAS 寫入試算表
-            // 注意：這裡使用 mode: 'no-cors'，因為 Google Apps Script 處理 POST 時的重新導向
-            // 在瀏覽器端常常會遇到 CORS 問題，我們採取 fire-and-forget 策略。
+            // 送出資料到 GAS (寫入試算表)
+            // 使用 no-cors 避免瀏覽器因為 POST 重導向而報錯
             await fetch(gasUrl, {
                 method: "POST",
                 mode: "no-cors", 
@@ -368,10 +355,10 @@
                 body: JSON.stringify(formData)
             });
 
-            // 本地預先將報名數字 +1，讓畫面立即反應 (因為我們是用 no-cors 送出，所以先自己加數字)
-            if(session === '2024-06-12') counts["session_2024_06_12"]++;
-            if(session === '2024-06-18') counts["session_2024_06_18"]++;
-            updateUI();
+            // 本地預先將報名數字 +1，讓畫面立即反應
+            if(session === '2024-06-12') globalCounts["session_2024_06_12"]++;
+            if(session === '2024-06-18') globalCounts["session_2024_06_18"]++;
+            updateUI(globalCounts["session_2024_06_12"], globalCounts["session_2024_06_18"]);
 
             // 顯示成功畫面
             document.getElementById('form-container').classList.add('hidden');
@@ -381,15 +368,15 @@
 
         } catch (error) {
             console.error("Submit error:", error);
-            showError("系統發生錯誤，請稍後再試或聯繫分機。");
+            showError("系統發生錯誤，請稍後再試。");
             submitBtn.disabled = false;
             submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> 確認送出報名';
             submitBtn.classList.replace('bg-emerald-400', 'bg-emerald-600');
         }
     };
 
-    // 啟動系統：開始抓取人數
-    fetchRealDataCount();
+    // 網頁載入後，立即啟動 JSONP 抓取資料！
+    fetchRealDataJSONP();
 
 </script>
 </body>
