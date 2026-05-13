@@ -270,49 +270,62 @@
         errDiv.classList.remove('hidden');
     }
 
-    // Firebase Setup
+    // Firebase Setup & State Management
     let db, auth;
     const CAPACITY = 12;
-    let currentRegistrations = [];
+    let currentRegistrations = []; // 存放所有報名資料
+    let isFirebaseActive = false;
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
+    // 嘗試初始化 Firebase
     try {
-        const firebaseConfig = JSON.parse(__firebase_config);
-        const app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        db = getFirestore(app);
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        if (firebaseConfig) {
+            const app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            isFirebaseActive = true;
+        } else {
+             console.log("Operating in Local Demo Mode (No Firebase Config).");
+        }
     } catch (e) {
-        console.error("Firebase config missing. Operating in local mode.");
+        console.log("Operating in Local Demo Mode (Firebase init failed).");
     }
 
     const startApp = async () => {
-        if (!auth) return;
-        
-        // 1. Auth First (Mandatory)
-        try {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                await signInWithCustomToken(auth, __initial_auth_token);
-            } else {
-                await signInAnonymously(auth);
+        if (isFirebaseActive && auth) {
+             // --- 雲端模式 (Firebase) ---
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Auth error:", error);
             }
-        } catch (error) {
-            console.error("Auth error:", error);
-        }
 
-        // 2. Setup Listener once authenticated
-        onAuthStateChanged(auth, (user) => {
-            if (!user) return;
-
-            const regsRef = collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
-            
-            onSnapshot(regsRef, (snapshot) => {
-                currentRegistrations = [];
-                snapshot.forEach(doc => currentRegistrations.push(doc.data()));
-                updateUI();
-            }, (error) => {
-                console.error("Snapshot error:", error);
+            onAuthStateChanged(auth, (user) => {
+                if (!user) return;
+                const regsRef = collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
+                onSnapshot(regsRef, (snapshot) => {
+                    currentRegistrations = [];
+                    snapshot.forEach(doc => currentRegistrations.push(doc.data()));
+                    updateUI();
+                }, (error) => {
+                    console.error("Snapshot error:", error);
+                });
             });
-        });
+        } else {
+            // --- 本地預覽模式 (Demo) ---
+            // 模擬一些預設的報名資料，讓進度條有反應
+            currentRegistrations = [
+                { session: '2024-06-12' }, { session: '2024-06-12' }, { session: '2024-06-12' },
+                { session: '2024-06-18' }, { session: '2024-06-18' }, { session: '2024-06-18' }, 
+                { session: '2024-06-18' }, { session: '2024-06-18' }
+            ];
+            updateUI();
+        }
     };
 
     const updateUI = () => {
@@ -380,24 +393,25 @@
             };
 
             // 2. Save to Google Apps Script (Your Google Sheet)
-            // Using User's Specific Web App URL
             const gasUrl = "https://script.google.com/macros/s/AKfycbxZ8nJ1Lep5O04kBZc8DAQ2y7tdMTpi9FjxfZk33WLWQFJjiNpGqZXugzEVueDsMI6I/exec"; 
             
-            // Note: We use mode: 'no-cors' so the browser doesn't block the request if GAS redirects,
-            // or we just fire and forget using text/plain.
             fetch(gasUrl, {
                 method: "POST",
                 mode: "no-cors",
                 headers: { "Content-Type": "text/plain;charset=utf-8" },
                 body: JSON.stringify(formData)
-            }).catch(err => console.error("GAS warning (often normal with no-cors):", err));
+            }).catch(err => console.error("GAS warning:", err));
 
-            // 3. Save to Firebase (For the real-time progress bar UI)
-            if (auth && db) {
+            // 3. Save to Firebase OR Update Local State
+            if (isFirebaseActive && auth && db) {
                 await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'registrations'), {
                     ...formData,
                     timestamp: serverTimestamp()
                 });
+            } else {
+                // 本地預覽模式：手動將新報名加入陣列並更新畫面
+                currentRegistrations.push(formData);
+                updateUI();
             }
 
             // 4. Show Success UI
