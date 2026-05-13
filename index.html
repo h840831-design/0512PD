@@ -226,12 +226,8 @@
 
     </main>
 
-<!-- Firebase & Logic Integration -->
-<script type="module">
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
-    import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
-    import { getFirestore, collection, addDoc, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
-
+<!-- 完全依賴 GAS 的純前端邏輯 (移除 Firebase) -->
+<script>
     // UI Utilities
     window.selectSession = (dateStr, btnNum) => {
         document.getElementById('selected-session-input').value = dateStr;
@@ -240,7 +236,6 @@
         document.getElementById('selection-container').classList.add('hidden');
         document.getElementById('info-cards').classList.add('hidden');
         
-        // Adjust Header height for better form focus
         document.getElementById('header-bg').classList.remove('pb-24');
         document.getElementById('header-bg').classList.add('pb-12');
         
@@ -258,7 +253,6 @@
         document.getElementById('header-bg').classList.add('pb-24');
         document.getElementById('header-bg').classList.remove('pb-12');
         
-        // Hide errors
         document.getElementById('form-error').classList.add('hidden');
         
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -270,96 +264,37 @@
         errDiv.classList.remove('hidden');
     }
 
-    // Firebase Setup & State Management
-    let db, auth;
+    // --- 核心系統設定 ---
     const CAPACITY = 12;
-    let currentRegistrations = []; // 存放所有報名資料
-    let isFirebaseActive = false;
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-    
-    // 將這裡替換成您最新的 GAS 網址
+    // 您的真實 GAS 網址
     const gasUrl = "https://script.google.com/macros/s/AKfycbxZ8nJ1Lep5O04kBZc8DAQ2y7tdMTpi9FjxfZk33WLWQFJjiNpGqZXugzEVueDsMI6I/exec";
+    
+    // 存放試算表回傳的真實人數
+    let counts = {
+        "session_2024_06_12": 0,
+        "session_2024_06_18": 0
+    };
 
-    // 嘗試初始化 Firebase
-    try {
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        if (firebaseConfig) {
-            const app = initializeApp(firebaseConfig);
-            auth = getAuth(app);
-            db = getFirestore(app);
-            isFirebaseActive = true;
-        } else {
-             console.log("Operating in Local Demo Mode (No Firebase Config).");
-        }
-    } catch (e) {
-        console.log("Operating in Local Demo Mode (Firebase init failed).");
-    }
-
-    // 新增：向 GAS 抓取試算表的真實報名人數
+    // 1. 網頁載入時，向 GAS 抓取試算表的真實報名人數
     const fetchRealDataCount = async () => {
         try {
-            // 使用 GET 請求向 GAS 取得人數
+            // 發送 GET 請求到 GAS (執行您 GAS 裡的 doGet 函式)
             const response = await fetch(gasUrl);
-            const counts = await response.json();
-            
-            // 將 GAS 回傳的人數更新到本地陣列，讓畫面可以正確顯示
-            currentRegistrations = [];
-            
-            // 塞入 6/12 的人數
-            for(let i=0; i < counts["session_2024_06_12"]; i++){
-                currentRegistrations.push({ session: '2024-06-12' });
-            }
-            
-            // 塞入 6/18 的人數
-            for(let i=0; i < counts["session_2024_06_18"]; i++){
-                currentRegistrations.push({ session: '2024-06-18' });
-            }
-            
+            counts = await response.json();
             updateUI();
         } catch (error) {
             console.error("無法取得試算表真實人數:", error);
-            // 萬一抓不到，至少讓畫面先顯示 0
-            document.getElementById('count-1').innerText = `0 / ${CAPACITY}`;
-            document.getElementById('count-2').innerText = `0 / ${CAPACITY}`;
+            document.getElementById('count-1').innerText = `讀取失敗`;
+            document.getElementById('count-2').innerText = `讀取失敗`;
         }
     };
 
-    const startApp = async () => {
-        if (isFirebaseActive && auth) {
-             // --- 雲端模式 (Firebase) ---
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (error) {
-                console.error("Auth error:", error);
-            }
-
-            onAuthStateChanged(auth, (user) => {
-                if (!user) return;
-                const regsRef = collection(db, 'artifacts', appId, 'public', 'data', 'registrations');
-                onSnapshot(regsRef, (snapshot) => {
-                    currentRegistrations = [];
-                    snapshot.forEach(doc => currentRegistrations.push(doc.data()));
-                    updateUI();
-                }, (error) => {
-                    console.error("Snapshot error:", error);
-                });
-            });
-        } else {
-            // --- 無 Firebase 模式 ---
-            // 改為去 GAS 抓取試算表的真實人數，而不是塞假資料
-            fetchRealDataCount();
-        }
-    };
-
+    // 2. 更新畫面進度條
     const updateUI = () => {
-        const count1 = currentRegistrations.filter(r => r.session === '2024-06-12').length;
-        const count2 = currentRegistrations.filter(r => r.session === '2024-06-18').length;
+        const count1 = counts["session_2024_06_12"] || 0;
+        const count2 = counts["session_2024_06_18"] || 0;
 
-        // Session 1 Update
+        // 更新 6/12 場次
         document.getElementById('count-1').innerText = `${count1} / ${CAPACITY}`;
         document.getElementById('bar-1').style.width = `${(count1 / CAPACITY) * 100}%`;
         const btn1 = document.getElementById('btn-session-1');
@@ -372,7 +307,7 @@
             btn1.classList.add('text-slate-500');
         }
 
-        // Session 2 Update
+        // 更新 6/18 場次
         document.getElementById('count-2').innerText = `${count2} / ${CAPACITY}`;
         document.getElementById('bar-2').style.width = `${(count2 / CAPACITY) * 100}%`;
         const btn2 = document.getElementById('btn-session-2');
@@ -386,30 +321,28 @@
         }
     };
 
-    // Form Submit Handler
+    // 3. 處理表單送出
     document.getElementById('regForm').onsubmit = async (e) => {
         e.preventDefault();
-        
-        // Hide previous errors
         document.getElementById('form-error').classList.add('hidden');
         
         const session = document.getElementById('selected-session-input').value;
         const submitBtn = document.getElementById('submitBtn');
         
-        // Final capacity check
-        const count = currentRegistrations.filter(r => r.session === session).length;
-        if (count >= CAPACITY) {
-            showError("很抱歉，在您填寫資料期間，該場次已額滿！");
+        // 送出前再次檢查是否額滿
+        const currentCount = session === '2024-06-12' ? counts["session_2024_06_12"] : counts["session_2024_06_18"];
+        if (currentCount >= CAPACITY) {
+            showError("很抱歉，該場次已額滿！");
             return;
         }
 
-        // Lock button during submission
+        // 鎖定按鈕避免重複送出
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 處理中...';
         submitBtn.classList.replace('bg-emerald-600', 'bg-emerald-400');
 
         try {
-            // 1. Prepare Data
+            // 整理表單資料
             const formData = {
                 unit: document.getElementById('unit').value.trim(),
                 name: document.getElementById('name').value.trim(),
@@ -419,47 +352,36 @@
                 session: session
             };
 
-            // 2. Save to Google Apps Script (Your Google Sheet)
-            fetch(gasUrl, {
+            // 將資料傳送到 GAS 寫入試算表
+            await fetch(gasUrl, {
                 method: "POST",
                 mode: "no-cors",
                 headers: { "Content-Type": "text/plain;charset=utf-8" },
                 body: JSON.stringify(formData)
-            }).catch(err => console.error("GAS warning:", err));
+            });
 
-            // 3. Save to Firebase OR Update Local State
-            if (isFirebaseActive && auth && db) {
-                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'registrations'), {
-                    ...formData,
-                    timestamp: serverTimestamp()
-                });
-            } else {
-                // 本地預覽模式：手動將新報名加入陣列並更新畫面
-                currentRegistrations.push(formData);
-                updateUI();
-            }
+            // 本地預先將報名數字 +1，讓畫面立即反應
+            if(session === '2024-06-12') counts["session_2024_06_12"]++;
+            if(session === '2024-06-18') counts["session_2024_06_18"]++;
+            updateUI();
 
-            // 4. Show Success UI
+            // 顯示成功畫面
             document.getElementById('form-container').classList.add('hidden');
             document.getElementById('success-msg').classList.remove('hidden');
-            
-            // Adjust header again
             document.getElementById('header-bg').classList.add('pb-12');
             window.scrollTo({ top: 0, behavior: 'smooth' });
 
         } catch (error) {
             console.error("Submit error:", error);
             showError("系統發生錯誤，請稍後再試或聯繫分機。");
-            
-            // Reset button
             submitBtn.disabled = false;
             submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> 確認送出報名';
             submitBtn.classList.replace('bg-emerald-400', 'bg-emerald-600');
         }
     };
 
-    // Initialize
-    startApp();
+    // 啟動系統：開始抓取人數
+    fetchRealDataCount();
 
 </script>
 </body>
