@@ -279,7 +279,13 @@
     const fetchRealDataCount = async () => {
         try {
             // 發送 GET 請求到 GAS (執行您 GAS 裡的 doGet 函式)
+            // 這裡不再使用 mode: 'no-cors'，因為我們需要讀取回傳的 JSON 內容
             const response = await fetch(gasUrl);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
             counts = await response.json();
             updateUI();
         } catch (error) {
@@ -329,7 +335,7 @@
         const session = document.getElementById('selected-session-input').value;
         const submitBtn = document.getElementById('submitBtn');
         
-        // 送出前再次檢查是否額滿
+        // 送出前再次檢查是否額滿 (使用本地存取的變數)
         const currentCount = session === '2024-06-12' ? counts["session_2024_06_12"] : counts["session_2024_06_18"];
         if (currentCount >= CAPACITY) {
             showError("很抱歉，該場次已額滿！");
@@ -353,14 +359,16 @@
             };
 
             // 將資料傳送到 GAS 寫入試算表
+            // 注意：這裡使用 mode: 'no-cors'，因為 Google Apps Script 處理 POST 時的重新導向
+            // 在瀏覽器端常常會遇到 CORS 問題，我們採取 fire-and-forget 策略。
             await fetch(gasUrl, {
                 method: "POST",
-                mode: "no-cors",
+                mode: "no-cors", 
                 headers: { "Content-Type": "text/plain;charset=utf-8" },
                 body: JSON.stringify(formData)
             });
 
-            // 本地預先將報名數字 +1，讓畫面立即反應
+            // 本地預先將報名數字 +1，讓畫面立即反應 (因為我們是用 no-cors 送出，所以先自己加數字)
             if(session === '2024-06-12') counts["session_2024_06_12"]++;
             if(session === '2024-06-18') counts["session_2024_06_18"]++;
             updateUI();
