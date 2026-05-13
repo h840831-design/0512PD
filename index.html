@@ -276,6 +276,9 @@
     let currentRegistrations = []; // 存放所有報名資料
     let isFirebaseActive = false;
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    
+    // 將這裡替換成您最新的 GAS 網址
+    const gasUrl = "https://script.google.com/macros/s/AKfycbxZ8nJ1Lep5O04kBZc8DAQ2y7tdMTpi9FjxfZk33WLWQFJjiNpGqZXugzEVueDsMI6I/exec";
 
     // 嘗試初始化 Firebase
     try {
@@ -291,6 +294,35 @@
     } catch (e) {
         console.log("Operating in Local Demo Mode (Firebase init failed).");
     }
+
+    // 新增：向 GAS 抓取試算表的真實報名人數
+    const fetchRealDataCount = async () => {
+        try {
+            // 使用 GET 請求向 GAS 取得人數
+            const response = await fetch(gasUrl);
+            const counts = await response.json();
+            
+            // 將 GAS 回傳的人數更新到本地陣列，讓畫面可以正確顯示
+            currentRegistrations = [];
+            
+            // 塞入 6/12 的人數
+            for(let i=0; i < counts["session_2024_06_12"]; i++){
+                currentRegistrations.push({ session: '2024-06-12' });
+            }
+            
+            // 塞入 6/18 的人數
+            for(let i=0; i < counts["session_2024_06_18"]; i++){
+                currentRegistrations.push({ session: '2024-06-18' });
+            }
+            
+            updateUI();
+        } catch (error) {
+            console.error("無法取得試算表真實人數:", error);
+            // 萬一抓不到，至少讓畫面先顯示 0
+            document.getElementById('count-1').innerText = `0 / ${CAPACITY}`;
+            document.getElementById('count-2').innerText = `0 / ${CAPACITY}`;
+        }
+    };
 
     const startApp = async () => {
         if (isFirebaseActive && auth) {
@@ -317,14 +349,9 @@
                 });
             });
         } else {
-            // --- 本地預覽模式 (Demo) ---
-            // 模擬一些預設的報名資料，讓進度條有反應
-            currentRegistrations = [
-                { session: '2024-06-12' }, { session: '2024-06-12' }, { session: '2024-06-12' },
-                { session: '2024-06-18' }, { session: '2024-06-18' }, { session: '2024-06-18' }, 
-                { session: '2024-06-18' }, { session: '2024-06-18' }
-            ];
-            updateUI();
+            // --- 無 Firebase 模式 ---
+            // 改為去 GAS 抓取試算表的真實人數，而不是塞假資料
+            fetchRealDataCount();
         }
     };
 
@@ -393,8 +420,6 @@
             };
 
             // 2. Save to Google Apps Script (Your Google Sheet)
-            const gasUrl = "https://script.google.com/macros/s/AKfycbxZ8nJ1Lep5O04kBZc8DAQ2y7tdMTpi9FjxfZk33WLWQFJjiNpGqZXugzEVueDsMI6I/exec"; 
-            
             fetch(gasUrl, {
                 method: "POST",
                 mode: "no-cors",
